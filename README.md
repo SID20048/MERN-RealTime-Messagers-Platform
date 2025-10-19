@@ -2,7 +2,7 @@
 
 > This codebase is licensed for **commercial use only with a paid license** Plus **Full Source with Whop AI Integration**.
 > It’s \*\*free for personal use\*\*.
-> 👉 [Get a Commercial License + Full Code](https://techwithemma.gumroad.com/l/huytmd)
+> 👉 [Get a Commercial License + Full Code](https://techwithemma.gumroad.com/l/puvbkz)
 > 👉 [Read License Terms](https://github.com/TechWithEmmaYT/MERN-RealTime-Messagers-Platform/blob/main/TECHWITHEMMA-LICENSE.md)
 
 ---
@@ -17,7 +17,7 @@ To add **AI-powered conversations** (like Meta AI in Messenger), get the **Whop 
 - 🔌 Secure backend + frontend AI setup
 - ⚙️ Ready configuration
 
-👉 [Get the Full Code + Whop AI Integration](https://techwithemma.gumroad.com/l/whop-ai)
+👉 [Get the Full Code + Whop AI Integration](https://techwithemma.gumroad.com/l/btzdi)
 
 ---
 
@@ -62,14 +62,14 @@ Learn how it all works — from real-time messaging to the complete folder struc
 - 🔌 Secure backend + frontend AI setup
 - ⚙️ Ready configuration
 
-👉 [Get the Full Code + Whop AI Integration](https://techwithemma.gumroad.com/l/whop-ai)
+👉 [Get the Full Code + Whop AI Integration](https://techwithemma.gumroad.com/l/btzdi)
 
 ---
 
 ## 📜 License
 
 A **paid license** is required for commercial use.
-👉 [Get License](https://techwithemma.gumroad.com/l/huytmd)
+👉 [Get License](https://techwithemma.gumroad.com/l/puvbkz)
 Read full license here: [TECHWITHEMMA-LICENSE.md](https://github.com/TechWithEmmaYT/MERN-RealTime-Messagers-Platform/blob/main/TECHWITHEMMA-LICENSE.md)
 
 ---
