@@ -14,7 +14,7 @@ To add **AI-powered conversations** (like Meta AI in Messenger), get the **Whop 
 - 📡 Real-time streaming via WebSocket
 - 🧠 Context-aware AI chat replies
 - 🔌 Secure backend + frontend AI setup
-- ⚙️ Ready configuration
+- ⚙️ Ready local setup
 
 👉 [Get the Full Code + Whop AI Integration](https://techwithemma.gumroad.com/l/btzdi)
 
