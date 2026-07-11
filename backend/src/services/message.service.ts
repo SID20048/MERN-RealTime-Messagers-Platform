@@ -29,7 +29,9 @@ export const sendMessageService = async (
   });
 
   if (!chat) {
-    throw new BadRequestException("Chat not found or unauthorized");
+    throw new BadRequestException(
+      "Chat not found or unauthorized"
+    );
   }
 
   if (replyToId) {
@@ -39,32 +41,37 @@ export const sendMessageService = async (
     });
 
     if (!replyMessage) {
-      throw new NotFoundException("Reply message not found");
+      throw new NotFoundException(
+        "Reply message not found"
+      );
     }
   }
 
   let imageUrl;
 
   if (image) {
-    const uploadRes = await cloudinary.uploader.upload(image);
+    const uploadRes =
+      await cloudinary.uploader.upload(image);
+
     imageUrl = uploadRes.secure_url;
   }
 
 
   // Create user message
-  const newMessage = await MessageModel.create({
-    chatId,
-    sender: userId,
-    content,
-    image: imageUrl,
-    replyTo: replyToId || null,
-  });
+  const newMessage =
+    await MessageModel.create({
+      chatId,
+      sender: userId,
+      content,
+      image: imageUrl,
+      replyTo: replyToId || null,
+    });
 
 
   await newMessage.populate([
     {
       path: "sender",
-      select: "name avatar",
+      select: "name avatar isAI",
     },
     {
       path: "replyTo",
@@ -77,11 +84,12 @@ export const sendMessageService = async (
   ]);
 
 
-  chat.lastMessage = newMessage._id as mongoose.Types.ObjectId;
+  chat.lastMessage =
+    newMessage._id as mongoose.Types.ObjectId;
+
   await chat.save();
 
 
-  // Send user message
   emitNewMessageToChatRoom(
     userId,
     chatId,
@@ -89,9 +97,10 @@ export const sendMessageService = async (
   );
 
 
-  const allParticipantIds = chat.participants.map((id) =>
-    id.toString()
-  );
+  const allParticipantIds =
+    chat.participants.map((id) =>
+      id.toString()
+    );
 
 
   emitLastMessageToParticipants(
@@ -105,16 +114,28 @@ export const sendMessageService = async (
 
   if (content?.trim()) {
     try {
-      const aiReply = await askAI(content);
+
+      console.log(
+        "Calling AI with:",
+        content
+      );
 
 
-      const aiUser = await UserModel.findOne({
-        name: "AI Assistant",
-      });
+      const aiReply =
+        await askAI(content);
 
 
-      if (!aiUser) {
-        console.log("AI user not found");
+      console.log(
+        "AI Reply:",
+        aiReply
+      );
+
+
+      if (!aiReply) {
+        console.log(
+          "AI returned empty response"
+        );
+
         return {
           userMessage: newMessage,
           chat,
@@ -122,18 +143,37 @@ export const sendMessageService = async (
       }
 
 
-      const aiMessage = await MessageModel.create({
-        chatId,
-        sender: String(aiUser._id),
-        content: aiReply,
-        image: null,
-        replyTo: null,
-      });
+      const aiUser =
+        await UserModel.findOne({
+          email: "ai@assistant.com",
+        });
+
+
+      if (!aiUser) {
+        console.log(
+          "AI user not found"
+        );
+
+        return {
+          userMessage: newMessage,
+          chat,
+        };
+      }
+
+
+      const aiMessage =
+        await MessageModel.create({
+          chatId,
+          sender: aiUser._id,
+          content: aiReply,
+          image: null,
+          replyTo: null,
+        });
 
 
       await aiMessage.populate({
         path: "sender",
-        select: "name avatar",
+        select: "name avatar isAI",
       });
 
 
@@ -143,7 +183,6 @@ export const sendMessageService = async (
       await chat.save();
 
 
-      // Send AI message to room
       emitNewMessageToChatRoom(
         String(aiUser._id),
         chatId,
@@ -158,8 +197,18 @@ export const sendMessageService = async (
       );
 
 
+      console.log(
+        "AI message sent successfully"
+      );
+
+
     } catch (error) {
-      console.error("AI ERROR:", error);
+
+      console.error(
+        "AI ERROR:",
+        error
+      );
+
     }
   }
 
