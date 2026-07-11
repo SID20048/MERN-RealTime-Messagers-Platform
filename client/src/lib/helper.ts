@@ -5,9 +5,12 @@ import type { ChatType } from "@/types/chat.type";
 
 export const isUserOnline = (userId?: string) => {
   if (!userId) return false;
+
   const { onlineUsers } = useSocket.getState();
+
   return onlineUsers.includes(userId);
 };
+
 
 export const getOtherUserAndGroup = (
   chat: ChatType,
@@ -15,38 +18,81 @@ export const getOtherUserAndGroup = (
 ) => {
   const isGroup = chat?.isGroup;
 
+
   if (isGroup) {
     return {
       name: chat.groupName || "Unnamed Group",
       subheading: `${chat.participants.length} members`,
       avatar: "",
       isGroup,
+      isOnline: false,
+      isAI: false,
     };
   }
 
-  const other = chat?.participants.find((p) => p._id !== currentUserId);
-  const isOnline = isUserOnline(other?._id ?? "");
+
+  const other = chat?.participants.find(
+    (p) => p._id !== currentUserId
+  );
+
+
+  const isAI = other?.isAI || false;
+
+  const isOnline = isAI
+    ? false
+    : isUserOnline(other?._id ?? "");
+
 
   return {
     name: other?.name || "Unknown",
-    subheading: isOnline ? "Online" : "Offline",
+
+    subheading: isAI
+      ? "AI Assistant"
+      : isOnline
+      ? "Online"
+      : "Offline",
+
     avatar: other?.avatar || "",
+
     isGroup: false,
+
     isOnline,
-    isAI: other?.isAI || false,
+
+    isAI,
   };
 };
 
-export const formatChatTime = (date: string | Date) => {
-  if (!date) return "";
-  const newDate = new Date(date);
-  if (isNaN(newDate.getTime())) return "Invalid date";
 
-  if (isToday(newDate)) return format(newDate, "h:mm a");
-  if (isYesterday(newDate)) return "Yesterday";
-  if (isThisWeek(newDate)) return format(newDate, "EEEE");
+export const formatChatTime = (
+  date: string | Date
+) => {
+  if (!date) return "";
+
+  const newDate = new Date(date);
+
+  if (isNaN(newDate.getTime())) {
+    return "Invalid date";
+  }
+
+
+  if (isToday(newDate)) {
+    return format(newDate, "h:mm a");
+  }
+
+
+  if (isYesterday(newDate)) {
+    return "Yesterday";
+  }
+
+
+  if (isThisWeek(newDate)) {
+    return format(newDate, "EEEE");
+  }
+
+
   return format(newDate, "M/d");
 };
+
 
 export function generateUUID(): string {
   return uuidv4();

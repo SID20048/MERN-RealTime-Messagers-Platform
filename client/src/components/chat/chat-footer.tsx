@@ -10,6 +10,7 @@ import { Form, FormField, FormItem } from "../ui/form";
 import { Input } from "../ui/input";
 import ChatReplyBar from "./chat-reply-bar";
 import { useChat } from "@/hooks/use-chat";
+import { askAI } from "@/services/ai.service";
 
 interface Props {
   chatId: string | null;
@@ -17,6 +18,7 @@ interface Props {
   replyTo: MessageType | null;
   onCancelReply: () => void;
 }
+
 const ChatFooter = ({
   chatId,
   currentUserId,
@@ -41,48 +43,75 @@ const ChatFooter = ({
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+
     if (!file) return;
+
     if (!file.type.startsWith("image/")) {
       toast.error("Please select an image file");
       return;
     }
 
     const reader = new FileReader();
-    reader.onloadend = () => setImage(reader.result as string);
+
+    reader.onloadend = () => {
+      setImage(reader.result as string);
+    };
+
     reader.readAsDataURL(file);
   };
 
   const handleRemoveImage = () => {
     setImage(null);
-    if (imageInputRef.current) imageInputRef.current.value = "";
+
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
   };
 
-  const onSubmit = (values: { message?: string }) => {
+  const onSubmit = async (values: { message?: string }) => {
     if (isSendingMsg) return;
+
     if (!values.message?.trim() && !image) {
       toast.error("Please enter a message or select an image");
       return;
     }
+
     const payload = {
       chatId,
       content: values.message,
       image: image || undefined,
       replyTo: replyTo,
     };
-    //Send Message
+
+    // Send normal message
     sendMessage(payload);
+
+    // Ask AI
+    if (values.message?.trim()) {
+      try {
+        const aiReply = await askAI(values.message);
+
+        console.log("AI Reply:", aiReply);
+
+      } catch (error) {
+        console.error("AI Error:", error);
+        toast.error("AI response failed");
+      }
+    }
 
     onCancelReply();
     handleRemoveImage();
     form.reset();
   };
+
   return (
     <>
       <div
-        className="sticky bottom-0
-       inset-x-0 z-[999]
-       bg-card border-t border-border py-4
-      "
+        className="
+        sticky bottom-0
+        inset-x-0 z-[999]
+        bg-card border-t border-border py-4
+        "
       >
         {image && !isSendingMsg && (
           <div className="max-w-6xl mx-auto px-8.5">
@@ -96,9 +125,10 @@ const ChatFooter = ({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="absolute top-px right-1
-                 bg-black/50 text-white rounded-full
-                 cursor-pointer
+                className="
+                absolute top-px right-1
+                bg-black/50 text-white rounded-full
+                cursor-pointer
                 "
                 onClick={handleRemoveImage}
               >
@@ -107,10 +137,12 @@ const ChatFooter = ({
             </div>
           </div>
         )}
+
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="max-w-6xl px-8.5 mx-auto
+            className="
+            max-w-6xl px-8.5 mx-auto
             flex items-end gap-2
             "
           >
@@ -125,6 +157,7 @@ const ChatFooter = ({
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
+
               <input
                 type="file"
                 className="hidden"
@@ -134,6 +167,7 @@ const ChatFooter = ({
                 onChange={handleImageChange}
               />
             </div>
+
             <FormField
               control={form.control}
               name="message"

@@ -20,25 +20,32 @@ export const createChatService = async (
 
   if (isGroup && participants?.length && groupName) {
     allParticipantIds = [userId, ...participants];
+
     chat = await ChatModel.create({
       participants: allParticipantIds,
       isGroup: true,
       groupName,
       createdBy: userId,
     });
+
   } else if (participantId) {
     const otherUser = await UserModel.findById(participantId);
-    if (!otherUser) throw new NotFoundException("User not found");
+
+    if (!otherUser) {
+      throw new NotFoundException("User not found");
+    }
 
     allParticipantIds = [userId, participantId];
+
     const existingChat = await ChatModel.findOne({
       participants: {
         $all: allParticipantIds,
         $size: 2,
       },
-    }).populate("participants", "name avatar");
+    }).populate("participants", "name avatar isAI");
 
     if (existingChat) return existingChat;
+
 
     chat = await ChatModel.create({
       participants: allParticipantIds,
@@ -47,27 +54,105 @@ export const createChatService = async (
     });
   }
 
-  // Implement websocket
+
   const populatedChat = await chat?.populate(
     "participants",
     "name avatar isAI"
   );
-  const particpantIdStrings = populatedChat?.participants?.map((p) => {
-    return p._id?.toString();
-  });
 
-  emitNewChatToParticpants(particpantIdStrings, populatedChat);
 
-  return chat;
+  const participantIds = populatedChat?.participants?.map((p) =>
+    p._id.toString()
+  );
+
+
+  emitNewChatToParticpants(
+    participantIds,
+    populatedChat
+  );
+
+
+  return populatedChat;
 };
 
-export const getUserChatsService = async (userId: string) => {
+
+
+// ================= CREATE AI CHAT =================
+
+export const createAIChatService = async (
+  userId: string
+) => {
+
+  const aiUser = await UserModel.findOne({
+    isAI: true,
+  });
+
+
+  if (!aiUser) {
+    throw new NotFoundException(
+      "AI user not found"
+    );
+  }
+
+
+  const existingChat = await ChatModel.findOne({
+    participants: {
+      $all: [
+        userId,
+        aiUser._id,
+      ],
+      $size: 2,
+    },
+  });
+
+
+  if (existingChat) {
+    return existingChat;
+  }
+
+
+  const chat = await ChatModel.create({
+    participants: [
+      userId,
+      aiUser._id,
+    ],
+    isGroup: false,
+    createdBy: userId,
+  });
+
+
+  const populatedChat = await chat.populate(
+    "participants",
+    "name avatar isAI"
+  );
+
+
+  emitNewChatToParticpants(
+    [userId],
+    populatedChat
+  );
+
+
+  return populatedChat;
+};
+
+
+
+// ================= GET USER CHATS =================
+
+export const getUserChatsService = async (
+  userId: string
+) => {
+
   const chats = await ChatModel.find({
     participants: {
       $in: [userId],
     },
   })
-    .populate("participants", "name avatar")
+    .populate(
+      "participants",
+      "name avatar isAI"
+    )
     .populate({
       path: "lastMessage",
       populate: {
@@ -75,25 +160,48 @@ export const getUserChatsService = async (userId: string) => {
         select: "name avatar",
       },
     })
-    .sort({ updatedAt: -1 });
+    .sort({
+      updatedAt: -1,
+    });
+
+
   return chats;
 };
 
-export const getSingleChatService = async (chatId: string, userId: string) => {
+
+
+// ================= GET SINGLE CHAT =================
+
+export const getSingleChatService = async (
+  chatId: string,
+  userId: string
+) => {
+
   const chat = await ChatModel.findOne({
     _id: chatId,
     participants: {
       $in: [userId],
     },
-  }).populate("participants", "name avatar");
+  }).populate(
+    "participants",
+    "name avatar isAI"
+  );
 
-  if (!chat)
+
+  if (!chat) {
     throw new BadRequestException(
       "Chat not found or you are not authorized to view this chat"
     );
+  }
 
-  const messages = await MessageModel.find({ chatId })
-    .populate("sender", "name avatar")
+
+  const messages = await MessageModel.find({
+    chatId,
+  })
+    .populate(
+      "sender",
+      "name avatar"
+    )
     .populate({
       path: "replyTo",
       select: "content image sender",
@@ -102,7 +210,10 @@ export const getSingleChatService = async (chatId: string, userId: string) => {
         select: "name avatar",
       },
     })
-    .sort({ createdAt: 1 });
+    .sort({
+      createdAt: 1,
+    });
+
 
   return {
     chat,
@@ -110,16 +221,29 @@ export const getSingleChatService = async (chatId: string, userId: string) => {
   };
 };
 
+
+
+// ================= VALIDATE PARTICIPANT =================
+
 export const validateChatParticipant = async (
   chatId: string,
   userId: string
 ) => {
+
   const chat = await ChatModel.findOne({
     _id: chatId,
     participants: {
       $in: [userId],
     },
   });
-  if (!chat) throw new BadRequestException("User not a participant in chat");
+
+
+  if (!chat) {
+    throw new BadRequestException(
+      "User not a participant in chat"
+    );
+  }
+
+
   return chat;
 };

@@ -8,6 +8,7 @@ import {
   emitNewMessageToChatRoom,
 } from "../lib/socket";
 import UserModel from "../models/user.model";
+import { askAI } from "./ai.service";
 
 export const sendMessageService = async (
   userId: string,
@@ -26,24 +27,31 @@ export const sendMessageService = async (
       $in: [userId],
     },
   });
-  if (!chat) throw new BadRequestException("Chat not found or unauthorized");
+
+  if (!chat) {
+    throw new BadRequestException("Chat not found or unauthorized");
+  }
 
   if (replyToId) {
     const replyMessage = await MessageModel.findOne({
       _id: replyToId,
       chatId,
     });
-    if (!replyMessage) throw new NotFoundException("Reply message not found");
+
+    if (!replyMessage) {
+      throw new NotFoundException("Reply message not found");
+    }
   }
 
   let imageUrl;
 
   if (image) {
-    //upload the image to cloudinary
     const uploadRes = await cloudinary.uploader.upload(image);
     imageUrl = uploadRes.secure_url;
   }
 
+
+  // Create user message
   const newMessage = await MessageModel.create({
     chatId,
     sender: userId,
@@ -52,8 +60,12 @@ export const sendMessageService = async (
     replyTo: replyToId || null,
   });
 
+
   await newMessage.populate([
-    { path: "sender", select: "name avatar" },
+    {
+      path: "sender",
+      select: "name avatar",
+    },
     {
       path: "replyTo",
       select: "content image sender",
@@ -64,15 +76,93 @@ export const sendMessageService = async (
     },
   ]);
 
+
   chat.lastMessage = newMessage._id as mongoose.Types.ObjectId;
   await chat.save();
 
-  //websocket emit the new Message to the chat room
-  emitNewMessageToChatRoom(userId, chatId, newMessage);
 
-  //websocket emit the lastmessage to members (personnal room user)
-  const allParticipantIds = chat.participants.map((id) => id.toString());
-  emitLastMessageToParticipants(allParticipantIds, chatId, newMessage);
+  // Send user message
+  emitNewMessageToChatRoom(
+    userId,
+    chatId,
+    newMessage
+  );
+
+
+  const allParticipantIds = chat.participants.map((id) =>
+    id.toString()
+  );
+
+
+  emitLastMessageToParticipants(
+    allParticipantIds,
+    chatId,
+    newMessage
+  );
+
+
+  // ================= AI RESPONSE =================
+
+  if (content?.trim()) {
+    try {
+      const aiReply = await askAI(content);
+
+
+      const aiUser = await UserModel.findOne({
+        name: "AI Assistant",
+      });
+
+
+      if (!aiUser) {
+        console.log("AI user not found");
+        return {
+          userMessage: newMessage,
+          chat,
+        };
+      }
+
+
+      const aiMessage = await MessageModel.create({
+        chatId,
+        sender: String(aiUser._id),
+        content: aiReply,
+        image: null,
+        replyTo: null,
+      });
+
+
+      await aiMessage.populate({
+        path: "sender",
+        select: "name avatar",
+      });
+
+
+      chat.lastMessage =
+        aiMessage._id as mongoose.Types.ObjectId;
+
+      await chat.save();
+
+
+      // Send AI message to room
+      emitNewMessageToChatRoom(
+        String(aiUser._id),
+        chatId,
+        aiMessage
+      );
+
+
+      emitLastMessageToParticipants(
+        allParticipantIds,
+        chatId,
+        aiMessage
+      );
+
+
+    } catch (error) {
+      console.error("AI ERROR:", error);
+    }
+  }
+
 
   return {
     userMessage: newMessage,

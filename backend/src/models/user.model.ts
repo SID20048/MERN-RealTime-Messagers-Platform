@@ -6,6 +6,7 @@ export interface UserDocument extends Document {
   email?: string;
   password?: string;
   avatar?: string | null;
+  isAI?: boolean;
   createdAt: Date;
   updatedAt: Date;
 
@@ -14,7 +15,11 @@ export interface UserDocument extends Document {
 
 const userSchema = new Schema<UserDocument>(
   {
-    name: { type: String, required: true },
+    name: {
+      type: String,
+      required: true,
+    },
+
     email: {
       type: String,
       required: true,
@@ -22,35 +27,58 @@ const userSchema = new Schema<UserDocument>(
       trim: true,
       lowercase: true,
     },
+
     password: {
       type: String,
       required: true,
     },
-    avatar: { type: String, default: null },
+
+    avatar: {
+      type: String,
+      default: null,
+    },
+
+    // AI account flag
+    isAI: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
+
     toJSON: {
       transform: (doc, ret) => {
         if (ret) {
           delete (ret as any).password;
         }
+
         return ret;
       },
     },
   }
 );
 
+
 userSchema.pre("save", async function (next) {
   if (this.password && this.isModified("password")) {
     this.password = await hashValue(this.password);
   }
+
   next();
 });
 
-userSchema.methods.comparePassword = async function (val: string) {
+
+userSchema.methods.comparePassword = async function (
+  val: string
+) {
   return compareValue(val, this.password);
 };
 
-const UserModel = mongoose.model<UserDocument>("User", userSchema);
+
+const UserModel = mongoose.model<UserDocument>(
+  "User",
+  userSchema
+);
+
 export default UserModel;
