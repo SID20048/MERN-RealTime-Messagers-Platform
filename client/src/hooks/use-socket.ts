@@ -1,8 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import { create } from "zustand";
 
-const BASE_URL =
-  import.meta.env.MODE === "development" ? import.meta.env.VITE_API_URL : "/";
+const BASE_URL = import.meta.env.VITE_API_URL;
 
 interface SocketState {
   socket: Socket | null;
@@ -17,7 +16,7 @@ export const useSocket = create<SocketState>()((set, get) => ({
 
   connectSocket: () => {
     const { socket } = get();
-    console.log(socket, "socket");
+
     if (socket?.connected) return;
 
     const newSocket = io(BASE_URL, {
@@ -36,8 +35,10 @@ export const useSocket = create<SocketState>()((set, get) => ({
       set({ onlineUsers: userIds });
     });
   },
+
   disconnectSocket: () => {
     const { socket } = get();
+
     if (socket) {
       socket.disconnect();
       set({ socket: null });
