@@ -1,144 +1,61 @@
-import { Server as HTTPServer } from "http";
-import jwt from "jsonwebtoken";
-import { Server, type Socket } from "socket.io";
-import { Env } from "../config/env.config";
-import { validateChatParticipant } from "../services/chat.service";
+import { io, Socket } from "socket.io-client";
+import { create } from "zustand";
 
-interface AuthenticatedSocket extends Socket {
-  userId?: string;
+const BASE_URL = import.meta.env.VITE_API_URL;
+
+interface SocketState {
+  socket: Socket | null;
+  onlineUsers: string[];
+  connectSocket: () => void;
+  disconnectSocket: () => void;
 }
 
-let io: Server | null = null;
+export const useSocket = create<SocketState>()((set, get) => ({
+  socket: null,
+  onlineUsers: [],
 
-const onlineUsers = new Map<string, string>();
+  connectSocket: () => {
+    const { socket } = get();
 
-export const initializeSocket = (httpServer: HTTPServer) => {
-  io = new Server(httpServer, {
-    cors: {
-      origin: Env.FRONTEND_ORIGIN,
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
-  });
+    if (socket?.connected) return;
 
-  io.use(async (socket: AuthenticatedSocket, next) => {
-    try {
-      const rawCookie = socket.handshake.headers.cookie;
-
-      if (!rawCookie) return next(new Error("Unauthorized"));
-
-      const token = rawCookie?.split("=")?.[1]?.trim();
-      if (!token) return next(new Error("Unauthorized"));
-
-      const decodedToken = jwt.verify(token, Env.JWT_SECRET) as {
-        userId: string;
-      };
-      if (!decodedToken) return next(new Error("Unauthorized"));
-
-      socket.userId = decodedToken.userId;
-      next();
-    } catch (error) {
-      next(new Error("Internal server error"));
-    }
-  });
-
-  io.on("connection", (socket: AuthenticatedSocket) => {
-    const userId = socket.userId!;
-    const newSocketId = socket.id;
-    if (!socket.userId) {
-      socket.disconnect(true);
-      return;
-    }
-
-    //register socket for the user
-    onlineUsers.set(userId, newSocketId);
-
-    //BroadCast online users to all socket
-    io?.emit("online:users", Array.from(onlineUsers.keys()));
-
-    //create personnal room for user
-    socket.join(`user:${userId}`);
-
-    socket.on(
-      "chat:join",
-      async (chatId: string, callback?: (err?: string) => void) => {
-        try {
-          await validateChatParticipant(chatId, userId);
-          socket.join(`chat:${chatId}`);
-          console.log(`User ${userId} join room chat:${chatId}`);
-
-          callback?.();
-        } catch (error) {
-          callback?.("Error joining chat");
-        }
-      }
-    );
-
-    socket.on("chat:leave", (chatId: string) => {
-      if (chatId) {
-        socket.leave(`chat:${chatId}`);
-        console.log(`User ${userId} left room chat:${chatId}`);
-      }
+    const newSocket = io(BASE_URL, {
+      withCredentials: true,
+      transports: ["polling", "websocket"],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
-    socket.on("disconnect", () => {
-      if (onlineUsers.get(userId) === newSocketId) {
-        if (userId) onlineUsers.delete(userId);
+    set({ socket: newSocket });
 
-        io?.emit("online:users", Array.from(onlineUsers.keys()));
-
-        console.log("socket disconnected", {
-          userId,
-          newSocketId,
-        });
-      }
+    newSocket.on("connect", () => {
+      console.log("Socket connected:", newSocket.id);
     });
-  });
-};
 
-function getIO() {
-  if (!io) throw new Error("Socket.IO not initialized");
-  return io;
-}
+    newSocket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error.message);
+    });
 
-export const emitNewChatToParticpants = (
-  participantIds: string[] = [],
-  chat: any
-) => {
-  const io = getIO();
-  for (const participantId of participantIds) {
-    io.to(`user:${participantId}`).emit("chat:new", chat);
-  }
-};
+    newSocket.on("disconnect", (reason) => {
+      console.log("Socket disconnected:", reason);
+    });
 
-export const emitNewMessageToChatRoom = (
-  senderId: string, //userId that sent the message
-  chatId: string,
-  message: any
-) => {
-  const io = getIO();
-  const senderSocketId = onlineUsers.get(senderId?.toString());
+    newSocket.on("online:users", (userIds: string[]) => {
+      console.log("Online users:", userIds);
+      set({ onlineUsers: userIds });
+    });
+  },
 
-  console.log(senderId, "senderId");
-  console.log(senderSocketId, "sender socketid exist");
-  console.log("All online users:", Object.fromEntries(onlineUsers));
+  disconnectSocket: () => {
+    const { socket } = get();
 
-  if (senderSocketId) {
-    io.to(`chat:${chatId}`).except(senderSocketId).emit("message:new", message);
-  } else {
-    io.to(`chat:${chatId}`).emit("message:new", message);
-  }
-};
-
-export const emitLastMessageToParticipants = (
-  participantIds: string[],
-  chatId: string,
-  lastMessage: any
-) => {
-  const io = getIO();
-  const payload = { chatId, lastMessage };
-
-  for (const participantId of participantIds) {
-    io.to(`user:${participantId}`).emit("chat:update", payload);
-  }
-};
+    if (socket) {
+      socket.disconnect();
+      set({
+        socket: null,
+        onlineUsers: [],
+      });
+    }
+  },
+}));
