@@ -12,85 +12,118 @@ interface SocketState {
 
 export const useSocket = create<SocketState>()((set, get) => ({
   socket: null,
+
   onlineUsers: [],
 
+
   connectSocket: () => {
-    const { socket } = get();
 
-    if (socket?.connected) return;
+    const existing = get().socket;
 
-    const newSocket = io(BASE_URL, {
+    if (existing?.connected) {
+      return;
+    }
+
+
+    const socket = io(BASE_URL, {
+
       withCredentials: true,
 
-      // Render stable connection
-      transports: ["polling"],
+      transports: [
+        "polling"
+      ],
+
+      autoConnect: true,
 
       reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
+
+      reconnectionAttempts: 10,
+
+      reconnectionDelay: 2000,
     });
+
+
 
     set({
-      socket: newSocket,
+      socket,
     });
 
 
-    newSocket.on("connect", () => {
-      console.log(
-        "Socket connected:",
-        newSocket.id
-      );
-    });
 
+    socket.on(
+      "connect",
+      () => {
 
-    newSocket.on(
-      "connect_error",
-      (error) => {
-        console.error(
-          "Socket connection error:",
-          error.message
+        console.log(
+          "Socket connected:",
+          socket.id
         );
+
       }
     );
 
 
-    newSocket.on(
+
+    socket.on(
+      "connect_error",
+      (error) => {
+
+        console.error(
+          "Socket error:",
+          error.message
+        );
+
+      }
+    );
+
+
+
+    socket.on(
       "disconnect",
       (reason) => {
+
         console.log(
           "Socket disconnected:",
           reason
         );
+
       }
     );
 
 
-    newSocket.on(
+
+    socket.on(
       "online:users",
-      (userIds: string[]) => {
-        console.log(
-          "Online users:",
-          userIds
-        );
+      (users:string[]) => {
 
         set({
-          onlineUsers: userIds,
+          onlineUsers: users
         });
+
       }
     );
+
   },
 
 
-  disconnectSocket: () => {
-    const { socket } = get();
 
-    if (socket) {
+  disconnectSocket:()=>{
+
+    const socket=get().socket;
+
+
+    if(socket){
+
       socket.disconnect();
 
+
       set({
-        socket: null,
-        onlineUsers: [],
+        socket:null,
+        onlineUsers:[]
       });
+
     }
-  },
+
+  }
+
 }));

@@ -12,34 +12,21 @@ let io: Server | null = null;
 
 const onlineUsers = new Map<string, string>();
 
-
-export const initializeSocket = (
-  httpServer: HTTPServer
-) => {
+export const initializeSocket = (httpServer: HTTPServer) => {
 
   io = new Server(httpServer, {
-
     cors: {
       origin: Env.FRONTEND_ORIGIN,
-
-      methods: [
-        "GET",
-        "POST"
-      ],
-
       credentials: true,
+      methods: ["GET", "POST"],
     },
-
 
     transports: [
       "polling",
-      "websocket"
+      "websocket",
     ],
 
-    allowUpgrades: true,
-
   });
-
 
 
   io.use(
@@ -50,42 +37,45 @@ export const initializeSocket = (
 
       try {
 
-        const cookies =
+        console.log(
+          "SOCKET COOKIE:",
+          socket.handshake.headers.cookie
+        );
+
+
+        const cookieHeader =
           socket.handshake.headers.cookie;
 
 
-
-        if (!cookies) {
-
+        if (!cookieHeader) {
           return next(
             new Error("Unauthorized")
           );
-
         }
 
+
+        const tokenCookie =
+          cookieHeader
+            .split(";")
+            .find(
+              (c) =>
+                c.trim()
+                .startsWith("accessToken=")
+            );
+
+
+        if (!tokenCookie) {
+          return next(
+            new Error("Unauthorized")
+          );
+        }
 
 
         const token =
-          cookies
-            .split(";")
-            .find(
-              (cookie) =>
-                cookie
-                  .trim()
-                  .startsWith("token=")
-            )
-            ?.split("=")[1];
-
-
-
-        if (!token) {
-
-          return next(
-            new Error("Unauthorized")
-          );
-
-        }
-
+          tokenCookie
+          .split("=")
+          .slice(1)
+          .join("=");
 
 
         const decoded =
@@ -97,30 +87,29 @@ export const initializeSocket = (
           };
 
 
-
         socket.userId =
           decoded.userId;
-
 
 
         next();
 
 
-
       } catch(error){
+
+        console.log(
+          "SOCKET AUTH ERROR",
+          error
+        );
 
 
         next(
           new Error("Unauthorized")
         );
 
-
       }
 
     }
   );
-
-
 
 
 
@@ -135,40 +124,29 @@ export const initializeSocket = (
         socket.userId;
 
 
-
       if(!userId){
 
         socket.disconnect(true);
-
         return;
 
       }
 
 
-
-
-      const socketId =
-        socket.id;
-
-
-
       onlineUsers.set(
         userId,
-        socketId
+        socket.id
       );
-
-
 
 
       console.log(
-        "Socket connected:",
-        {
-          userId,
-          socketId
-        }
+        "SOCKET CONNECTED",
+        userId
       );
 
 
+      socket.join(
+        `user:${userId}`
+      );
 
 
       io?.emit(
@@ -180,22 +158,12 @@ export const initializeSocket = (
 
 
 
-
-      socket.join(
-        `user:${userId}`
-      );
-
-
-
-
-
       socket.on(
         "chat:join",
         async(
           chatId:string,
-          callback?:(
-            error?:string
-          )=>void
+          callback?
+          :(error?:string)=>void
         )=>{
 
 
@@ -208,55 +176,24 @@ export const initializeSocket = (
             );
 
 
-
             socket.join(
               `chat:${chatId}`
             );
 
 
-
             callback?.();
-
 
 
           }catch(error){
 
-
             callback?.(
-              "Error joining chat"
-            );
-
-
-          }
-
-
-        }
-      );
-
-
-
-
-
-      socket.on(
-        "chat:leave",
-        (
-          chatId:string
-        )=>{
-
-
-          if(chatId){
-
-            socket.leave(
-              `chat:${chatId}`
+              "Cannot join chat"
             );
 
           }
 
-
         }
       );
-
-
 
 
 
@@ -267,39 +204,31 @@ export const initializeSocket = (
 
           if(
             onlineUsers.get(userId)
-            === socketId
+            === socket.id
           ){
-
 
             onlineUsers.delete(
               userId
             );
 
-
-
-            io?.emit(
-              "online:users",
-              Array.from(
-                onlineUsers.keys()
-              )
-            );
-
           }
 
 
-
-          console.log(
-            "Socket disconnected:",
-            {
-              userId,
-              socketId
-            }
+          io?.emit(
+            "online:users",
+            Array.from(
+              onlineUsers.keys()
+            )
           );
 
 
+          console.log(
+            "SOCKET DISCONNECTED",
+            userId
+          );
+
         }
       );
-
 
 
     }
@@ -309,15 +238,12 @@ export const initializeSocket = (
 
 
 
-
-
 const getIO = ()=>{
-
 
   if(!io){
 
     throw new Error(
-      "Socket.IO not initialized"
+      "Socket not initialized"
     );
 
   }
@@ -325,45 +251,35 @@ const getIO = ()=>{
 
   return io;
 
-
 };
-
-
 
 
 
 export const emitNewChatToParticpants = (
-  participantIds:string[] = [],
+  participantIds:string[]=[],
   chat:any
 )=>{
 
-
-  const socketServer =
+  const server =
     getIO();
 
 
-
   participantIds.forEach(
-    (participantId)=>{
+    id=>{
 
-
-      socketServer
-        .to(
-          `user:${participantId}`
-        )
-        .emit(
-          "chat:new",
-          chat
-        );
-
+      server
+      .to(
+        `user:${id}`
+      )
+      .emit(
+        "chat:new",
+        chat
+      );
 
     }
   );
 
-
 };
-
-
 
 
 
@@ -373,55 +289,20 @@ export const emitNewMessageToChatRoom = (
   message:any
 )=>{
 
-
-  const socketServer =
+  const server =
     getIO();
 
 
-
-  const senderSocketId =
-    onlineUsers.get(
-      senderId.toString()
-    );
-
-
-
-
-  if(senderSocketId){
-
-
-    socketServer
-      .to(
-        `chat:${chatId}`
-      )
-      .except(
-        senderSocketId
-      )
-      .emit(
-        "message:new",
-        message
-      );
-
-
-  }else{
-
-
-    socketServer
-      .to(
-        `chat:${chatId}`
-      )
-      .emit(
-        "message:new",
-        message
-      );
-
-
-  }
-
+  server
+  .to(
+    `chat:${chatId}`
+  )
+  .emit(
+    "message:new",
+    message
+  );
 
 };
-
-
 
 
 
@@ -431,32 +312,26 @@ export const emitLastMessageToParticipants = (
   lastMessage:any
 )=>{
 
-
-  const socketServer =
+  const server =
     getIO();
 
 
-
-
   participantIds.forEach(
-    (participantId)=>{
+    id=>{
 
-
-      socketServer
-        .to(
-          `user:${participantId}`
-        )
-        .emit(
-          "chat:update",
-          {
-            chatId,
-            lastMessage
-          }
-        );
-
+      server
+      .to(
+        `user:${id}`
+      )
+      .emit(
+        "chat:update",
+        {
+          chatId,
+          lastMessage
+        }
+      );
 
     }
   );
-
 
 };
