@@ -1,4 +1,3 @@
-
 import { getOtherUserAndGroup } from "@/lib/helper";
 import { PROTECTED_ROUTES } from "@/routes/routes";
 import type { ChatType } from "@/types/chat.type";
@@ -24,19 +23,13 @@ const ChatHeader = ({ chat, currentUserId }: Props) => {
 
   return (
     <div
-      className="sticky top-0
-      flex items-center gap-5 border-b border-border
-      bg-card px-2 z-50"
+      className="sticky top-0 flex items-center gap-5 border-b border-border bg-card px-2 z-50"
     >
       <div className="h-14 px-4 flex items-center">
-        <div>
-          <ArrowLeft
-            className="w-5 h-5 inline-block lg:hidden
-            text-muted-foreground cursor-pointer
-            mr-2"
-            onClick={() => navigate(PROTECTED_ROUTES.CHAT)}
-          />
-        </div>
+        <ArrowLeft
+          className="w-5 h-5 inline-block lg:hidden text-muted-foreground cursor-pointer mr-2"
+          onClick={() => navigate(PROTECTED_ROUTES.CHAT)}
+        />
 
         <AvatarWithBadge
           name={name}
@@ -64,13 +57,7 @@ const ChatHeader = ({ chat, currentUserId }: Props) => {
 
       <div>
         <div
-          className={`flex-1
-          text-center
-          py-4 h-full
-          border-b-2
-          border-primary
-          font-medium
-          text-primary`}
+          className="flex-1 text-center py-4 h-full border-b-2 border-primary font-medium text-primary"
         >
           Chat
         </div>
@@ -80,4 +67,3 @@ const ChatHeader = ({ chat, currentUserId }: Props) => {
 };
 
 export default ChatHeader;
-```
