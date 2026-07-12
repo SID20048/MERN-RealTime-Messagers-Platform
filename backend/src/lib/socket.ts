@@ -4,14 +4,11 @@ import { Server, type Socket } from "socket.io";
 import { Env } from "../config/env.config";
 import { validateChatParticipant } from "../services/chat.service";
 
-
 interface AuthenticatedSocket extends Socket {
   userId?: string;
 }
 
-
 let io: Server | null = null;
-
 
 const onlineUsers = new Map<string, string>();
 
@@ -20,58 +17,71 @@ export const initializeSocket = (
   httpServer: HTTPServer
 ) => {
 
-
   io = new Server(httpServer, {
 
     cors: {
-
       origin: Env.FRONTEND_ORIGIN,
 
-      methods:[
+      methods: [
         "GET",
         "POST"
       ],
 
-      credentials:true,
-
+      credentials: true,
     },
 
 
-    transports:[
+    transports: [
       "polling",
       "websocket"
     ],
 
+    allowUpgrades: true,
 
   });
 
 
 
-  // SOCKET AUTH
   io.use(
     (
-      socket:AuthenticatedSocket,
+      socket: AuthenticatedSocket,
       next
-    )=>{
+    ) => {
 
-      try{
+      try {
+
+        const cookies =
+          socket.handshake.headers.cookie;
+
+
+
+        if (!cookies) {
+
+          return next(
+            new Error("Unauthorized")
+          );
+
+        }
+
 
 
         const token =
-          socket.handshake.auth?.token;
+          cookies
+            .split(";")
+            .find(
+              (cookie) =>
+                cookie
+                  .trim()
+                  .startsWith("token=")
+            )
+            ?.split("=")[1];
 
 
 
-        if(!token){
-
-          console.log(
-            "Socket token missing"
-          );
+        if (!token) {
 
           return next(
-            new Error(
-              "Unauthorized"
-            )
+            new Error("Unauthorized")
           );
 
         }
@@ -97,20 +107,13 @@ export const initializeSocket = (
 
 
 
-      }catch(error){
-
-
-        console.log(
-          "Socket auth failed",
-          error
-        );
+      } catch(error){
 
 
         next(
-          new Error(
-            "Unauthorized"
-          )
+          new Error("Unauthorized")
         );
+
 
       }
 
@@ -156,19 +159,13 @@ export const initializeSocket = (
 
 
 
+
       console.log(
-        "Socket connected",
+        "Socket connected:",
         {
           userId,
           socketId
         }
-      );
-
-
-
-
-      socket.join(
-        `user:${userId}`
       );
 
 
@@ -184,12 +181,21 @@ export const initializeSocket = (
 
 
 
+      socket.join(
+        `user:${userId}`
+      );
+
+
+
+
 
       socket.on(
         "chat:join",
         async(
           chatId:string,
-          callback?:(error?:string)=>void
+          callback?:(
+            error?:string
+          )=>void
         )=>{
 
 
@@ -205,12 +211,6 @@ export const initializeSocket = (
 
             socket.join(
               `chat:${chatId}`
-            );
-
-
-
-            console.log(
-              `User ${userId} joined chat:${chatId}`
             );
 
 
@@ -232,8 +232,6 @@ export const initializeSocket = (
 
         }
       );
-
-
 
 
 
@@ -262,9 +260,6 @@ export const initializeSocket = (
 
 
 
-
-
-
       socket.on(
         "disconnect",
         ()=>{
@@ -274,6 +269,7 @@ export const initializeSocket = (
             onlineUsers.get(userId)
             === socketId
           ){
+
 
             onlineUsers.delete(
               userId
@@ -293,7 +289,7 @@ export const initializeSocket = (
 
 
           console.log(
-            "Socket disconnected",
+            "Socket disconnected:",
             {
               userId,
               socketId
@@ -309,10 +305,7 @@ export const initializeSocket = (
     }
   );
 
-
 };
-
-
 
 
 
@@ -339,32 +332,29 @@ const getIO = ()=>{
 
 
 
-
-
 export const emitNewChatToParticpants = (
   participantIds:string[] = [],
   chat:any
 )=>{
 
 
-  const io =
+  const socketServer =
     getIO();
 
 
 
   participantIds.forEach(
-    (
-      participantId
-    )=>{
+    (participantId)=>{
 
 
-      io.to(
-        `user:${participantId}`
-      )
-      .emit(
-        "chat:new",
-        chat
-      );
+      socketServer
+        .to(
+          `user:${participantId}`
+        )
+        .emit(
+          "chat:new",
+          chat
+        );
 
 
     }
@@ -377,9 +367,6 @@ export const emitNewChatToParticpants = (
 
 
 
-
-
-
 export const emitNewMessageToChatRoom = (
   senderId:string,
   chatId:string,
@@ -387,7 +374,7 @@ export const emitNewMessageToChatRoom = (
 )=>{
 
 
-  const io =
+  const socketServer =
     getIO();
 
 
@@ -403,39 +390,36 @@ export const emitNewMessageToChatRoom = (
   if(senderSocketId){
 
 
-    io.to(
-      `chat:${chatId}`
-    )
-    .except(
-      senderSocketId
-    )
-    .emit(
-      "message:new",
-      message
-    );
-
+    socketServer
+      .to(
+        `chat:${chatId}`
+      )
+      .except(
+        senderSocketId
+      )
+      .emit(
+        "message:new",
+        message
+      );
 
 
   }else{
 
 
-    io.to(
-      `chat:${chatId}`
-    )
-    .emit(
-      "message:new",
-      message
-    );
+    socketServer
+      .to(
+        `chat:${chatId}`
+      )
+      .emit(
+        "message:new",
+        message
+      );
 
 
   }
 
 
-
 };
-
-
-
 
 
 
@@ -448,28 +432,27 @@ export const emitLastMessageToParticipants = (
 )=>{
 
 
-  const io =
+  const socketServer =
     getIO();
 
 
 
 
   participantIds.forEach(
-    (
-      participantId
-    )=>{
+    (participantId)=>{
 
 
-      io.to(
-        `user:${participantId}`
-      )
-      .emit(
-        "chat:update",
-        {
-          chatId,
-          lastMessage
-        }
-      );
+      socketServer
+        .to(
+          `user:${participantId}`
+        )
+        .emit(
+          "chat:update",
+          {
+            chatId,
+            lastMessage
+          }
+        );
 
 
     }
