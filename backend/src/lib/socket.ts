@@ -1,61 +1,181 @@
-import { io, Socket } from "socket.io-client";
-import { create } from "zustand";
+import { Server as HTTPServer } from "http";
+import jwt from "jsonwebtoken";
+import { Server, type Socket } from "socket.io";
+import { Env } from "../config/env.config";
+import { validateChatParticipant } from "../services/chat.service";
 
-const BASE_URL = import.meta.env.VITE_API_URL;
-
-interface SocketState {
-  socket: Socket | null;
-  onlineUsers: string[];
-  connectSocket: () => void;
-  disconnectSocket: () => void;
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
 }
 
-export const useSocket = create<SocketState>()((set, get) => ({
-  socket: null,
-  onlineUsers: [],
+let io: Server | null = null;
 
-  connectSocket: () => {
-    const { socket } = get();
+const onlineUsers = new Map<string, string>();
 
-    if (socket?.connected) return;
+export const initializeSocket = (httpServer: HTTPServer) => {
+  io = new Server(httpServer, {
+    cors: {
+      origin: Env.FRONTEND_ORIGIN,
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
+    transports: ["polling", "websocket"],
+  });
 
-    const newSocket = io(BASE_URL, {
-      withCredentials: true,
-      transports: ["polling", "websocket"],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
+  io.use((socket: AuthenticatedSocket, next) => {
+    try {
+      const rawCookie = socket.handshake.headers.cookie;
 
-    set({ socket: newSocket });
+      if (!rawCookie) {
+        return next(new Error("Unauthorized"));
+      }
 
-    newSocket.on("connect", () => {
-      console.log("Socket connected:", newSocket.id);
-    });
+      const token = rawCookie.split("=")[1]?.trim();
 
-    newSocket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error.message);
-    });
+      if (!token) {
+        return next(new Error("Unauthorized"));
+      }
 
-    newSocket.on("disconnect", (reason) => {
-      console.log("Socket disconnected:", reason);
-    });
+      const decodedToken = jwt.verify(
+        token,
+        Env.JWT_SECRET
+      ) as { userId: string };
 
-    newSocket.on("online:users", (userIds: string[]) => {
-      console.log("Online users:", userIds);
-      set({ onlineUsers: userIds });
-    });
-  },
+      socket.userId = decodedToken.userId;
 
-  disconnectSocket: () => {
-    const { socket } = get();
-
-    if (socket) {
-      socket.disconnect();
-      set({
-        socket: null,
-        onlineUsers: [],
-      });
+      next();
+    } catch (error) {
+      next(new Error("Unauthorized"));
     }
-  },
-}));
+  });
+
+  io.on("connection", (socket: AuthenticatedSocket) => {
+    const userId = socket.userId;
+
+    if (!userId) {
+      socket.disconnect(true);
+      return;
+    }
+
+    const socketId = socket.id;
+
+    onlineUsers.set(userId, socketId);
+
+    console.log("Socket connected:", {
+      userId,
+      socketId,
+    });
+
+    io?.emit("online:users", Array.from(onlineUsers.keys()));
+
+    socket.join(`user:${userId}`);
+
+    socket.on(
+      "chat:join",
+      async (chatId: string, callback?: (error?: string) => void) => {
+        try {
+          await validateChatParticipant(chatId, userId);
+
+          socket.join(`chat:${chatId}`);
+
+          console.log(
+            `User ${userId} joined chat:${chatId}`
+          );
+
+          callback?.();
+        } catch (error) {
+          callback?.("Error joining chat");
+        }
+      }
+    );
+
+    socket.on("chat:leave", (chatId: string) => {
+      if (chatId) {
+        socket.leave(`chat:${chatId}`);
+
+        console.log(
+          `User ${userId} left chat:${chatId}`
+        );
+      }
+    });
+
+    socket.on("disconnect", () => {
+      if (onlineUsers.get(userId) === socketId) {
+        onlineUsers.delete(userId);
+
+        io?.emit(
+          "online:users",
+          Array.from(onlineUsers.keys())
+        );
+      }
+
+      console.log("Socket disconnected:", {
+        userId,
+        socketId,
+      });
+    });
+  });
+};
+
+const getIO = () => {
+  if (!io) {
+    throw new Error("Socket.IO not initialized");
+  }
+
+  return io;
+};
+
+export const emitNewChatToParticpants = (
+  participantIds: string[] = [],
+  chat: any
+) => {
+  const io = getIO();
+
+  participantIds.forEach((participantId) => {
+    io
+      .to(`user:${participantId}`)
+      .emit("chat:new", chat);
+  });
+};
+
+export const emitNewMessageToChatRoom = (
+  senderId: string,
+  chatId: string,
+  message: any
+) => {
+  const io = getIO();
+
+  const senderSocketId = onlineUsers.get(
+    senderId.toString()
+  );
+
+  if (senderSocketId) {
+    io
+      .to(`chat:${chatId}`)
+      .except(senderSocketId)
+      .emit("message:new", message);
+  } else {
+    io
+      .to(`chat:${chatId}`)
+      .emit("message:new", message);
+  }
+};
+
+export const emitLastMessageToParticipants = (
+  participantIds: string[],
+  chatId: string,
+  lastMessage: any
+) => {
+  const io = getIO();
+
+  const payload = {
+    chatId,
+    lastMessage,
+  };
+
+  participantIds.forEach((participantId) => {
+    io
+      .to(`user:${participantId}`)
+      .emit("chat:update", payload);
+  });
+};
