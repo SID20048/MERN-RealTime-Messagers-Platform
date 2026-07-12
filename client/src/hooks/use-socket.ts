@@ -21,27 +21,76 @@ export const useSocket = create<SocketState>()((set, get) => ({
 
     const newSocket = io(BASE_URL, {
       withCredentials: true,
-      autoConnect: true,
+
+      // Render stable connection
+      transports: ["polling"],
+
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
     });
 
-    set({ socket: newSocket });
+    set({
+      socket: newSocket,
+    });
+
 
     newSocket.on("connect", () => {
-      console.log("Socket connected", newSocket.id);
+      console.log(
+        "Socket connected:",
+        newSocket.id
+      );
     });
 
-    newSocket.on("online:users", (userIds) => {
-      console.log("Online users", userIds);
-      set({ onlineUsers: userIds });
-    });
+
+    newSocket.on(
+      "connect_error",
+      (error) => {
+        console.error(
+          "Socket connection error:",
+          error.message
+        );
+      }
+    );
+
+
+    newSocket.on(
+      "disconnect",
+      (reason) => {
+        console.log(
+          "Socket disconnected:",
+          reason
+        );
+      }
+    );
+
+
+    newSocket.on(
+      "online:users",
+      (userIds: string[]) => {
+        console.log(
+          "Online users:",
+          userIds
+        );
+
+        set({
+          onlineUsers: userIds,
+        });
+      }
+    );
   },
+
 
   disconnectSocket: () => {
     const { socket } = get();
 
     if (socket) {
       socket.disconnect();
-      set({ socket: null });
+
+      set({
+        socket: null,
+        onlineUsers: [],
+      });
     }
   },
 }));
