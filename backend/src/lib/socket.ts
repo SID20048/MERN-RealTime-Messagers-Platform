@@ -16,166 +16,271 @@ export const initializeSocket = (httpServer: HTTPServer) => {
   io = new Server(httpServer, {
     cors: {
       origin: Env.FRONTEND_ORIGIN,
-      methods: ["GET", "POST"],
       credentials: true,
+      methods: ["GET", "POST"],
     },
-    transports: ["polling", "websocket"],
+
+    // Render works better with websocket only
+    transports: ["websocket"],
+
+    allowEIO3: false,
   });
+
 
   io.use((socket: AuthenticatedSocket, next) => {
     try {
-      const rawCookie = socket.handshake.headers.cookie;
+      const cookie = socket.handshake.headers.cookie;
 
-      if (!rawCookie) {
-        return next(new Error("Unauthorized"));
+      if (!cookie) {
+        return next(new Error("No cookie"));
       }
 
-      const token = rawCookie.split("=")[1]?.trim();
+
+      const token = cookie
+        .split(";")
+        .find((c) => c.trim().startsWith("token="))
+        ?.split("=")[1];
+
 
       if (!token) {
-        return next(new Error("Unauthorized"));
+        return next(new Error("No token"));
       }
 
-      const decodedToken = jwt.verify(
+
+      const decoded = jwt.verify(
         token,
         Env.JWT_SECRET
-      ) as { userId: string };
+      ) as {
+        userId: string;
+      };
 
-      socket.userId = decodedToken.userId;
+
+      socket.userId = decoded.userId;
 
       next();
+
     } catch (error) {
+      console.log("Socket auth error", error);
       next(new Error("Unauthorized"));
     }
   });
 
-  io.on("connection", (socket: AuthenticatedSocket) => {
+
+
+  io.on("connection", (socket: AuthenticatedSocket)=>{
+
     const userId = socket.userId;
 
-    if (!userId) {
-      socket.disconnect(true);
+    if(!userId){
+      socket.disconnect();
       return;
     }
 
-    const socketId = socket.id;
 
-    onlineUsers.set(userId, socketId);
-
-    console.log("Socket connected:", {
+    onlineUsers.set(
       userId,
-      socketId,
-    });
+      socket.id
+    );
 
-    io?.emit("online:users", Array.from(onlineUsers.keys()));
+
+    console.log(
+      "Socket connected",
+      userId,
+      socket.id
+    );
+
+
+    io?.emit(
+      "online:users",
+      Array.from(onlineUsers.keys())
+    );
+
 
     socket.join(`user:${userId}`);
 
+
+
     socket.on(
       "chat:join",
-      async (chatId: string, callback?: (error?: string) => void) => {
-        try {
-          await validateChatParticipant(chatId, userId);
+      async(
+        chatId:string,
+        callback?:Function
+      )=>{
 
-          socket.join(`chat:${chatId}`);
+        try{
 
-          console.log(
-            `User ${userId} joined chat:${chatId}`
+          await validateChatParticipant(
+            chatId,
+            userId
           );
 
+
+          socket.join(
+            `chat:${chatId}`
+          );
+
+
           callback?.();
-        } catch (error) {
-          callback?.("Error joining chat");
+
+        }catch(error){
+
+          callback?.(
+            "Unable to join chat"
+          );
+
         }
+
       }
     );
 
-    socket.on("chat:leave", (chatId: string) => {
-      if (chatId) {
-        socket.leave(`chat:${chatId}`);
 
-        console.log(
-          `User ${userId} left chat:${chatId}`
+
+    socket.on(
+      "chat:leave",
+      (chatId:string)=>{
+
+        socket.leave(
+          `chat:${chatId}`
         );
-      }
-    });
 
-    socket.on("disconnect", () => {
-      if (onlineUsers.get(userId) === socketId) {
-        onlineUsers.delete(userId);
+      }
+    );
+
+
+
+    socket.on(
+      "disconnect",
+      ()=>{
+
+        if(
+          onlineUsers.get(userId)
+          === socket.id
+        ){
+
+          onlineUsers.delete(userId);
+
+        }
+
 
         io?.emit(
           "online:users",
-          Array.from(onlineUsers.keys())
+          Array.from(
+            onlineUsers.keys()
+          )
         );
-      }
 
-      console.log("Socket disconnected:", {
-        userId,
-        socketId,
-      });
-    });
+
+        console.log(
+          "Socket disconnected",
+          userId
+        );
+
+      }
+    );
+
   });
+
 };
 
-const getIO = () => {
-  if (!io) {
-    throw new Error("Socket.IO not initialized");
+
+
+const getIO = ()=>{
+
+  if(!io){
+    throw new Error(
+      "Socket not initialized"
+    );
   }
 
   return io;
+
 };
+
+
 
 export const emitNewChatToParticpants = (
-  participantIds: string[] = [],
-  chat: any
-) => {
-  const io = getIO();
+  participantIds:string[],
+  chat:any
+)=>{
 
-  participantIds.forEach((participantId) => {
-    io
-      .to(`user:${participantId}`)
-      .emit("chat:new", chat);
+  const io=getIO();
+
+  participantIds.forEach(id=>{
+
+    io.to(
+      `user:${id}`
+    ).emit(
+      "chat:new",
+      chat
+    );
+
   });
+
 };
+
+
 
 export const emitNewMessageToChatRoom = (
-  senderId: string,
-  chatId: string,
-  message: any
-) => {
-  const io = getIO();
+ senderId:string,
+ chatId:string,
+ message:any
+)=>{
 
-  const senderSocketId = onlineUsers.get(
-    senderId.toString()
+ const io=getIO();
+
+ const senderSocket =
+ onlineUsers.get(senderId);
+
+
+ if(senderSocket){
+
+  io.to(
+    `chat:${chatId}`
+  )
+  .except(senderSocket)
+  .emit(
+    "message:new",
+    message
   );
 
-  if (senderSocketId) {
-    io
-      .to(`chat:${chatId}`)
-      .except(senderSocketId)
-      .emit("message:new", message);
-  } else {
-    io
-      .to(`chat:${chatId}`)
-      .emit("message:new", message);
-  }
+ }else{
+
+  io.to(
+    `chat:${chatId}`
+  )
+  .emit(
+    "message:new",
+    message
+  );
+
+ }
+
 };
 
+
+
 export const emitLastMessageToParticipants = (
-  participantIds: string[],
-  chatId: string,
-  lastMessage: any
-) => {
-  const io = getIO();
+ participantIds:string[],
+ chatId:string,
+ lastMessage:any
+)=>{
 
-  const payload = {
-    chatId,
-    lastMessage,
-  };
+ const io=getIO();
 
-  participantIds.forEach((participantId) => {
-    io
-      .to(`user:${participantId}`)
-      .emit("chat:update", payload);
-  });
+
+ participantIds.forEach(id=>{
+
+  io.to(
+    `user:${id}`
+  )
+  .emit(
+    "chat:update",
+    {
+      chatId,
+      lastMessage
+    }
+  );
+
+ });
+
 };
