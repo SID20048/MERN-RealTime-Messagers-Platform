@@ -16,78 +16,57 @@ export const initializeSocket = (httpServer: HTTPServer) => {
   io = new Server(httpServer, {
     cors: {
       origin: Env.FRONTEND_ORIGIN,
-      credentials: true,
       methods: ["GET", "POST"],
+      credentials: true,
     },
-
-    // Render works better with websocket only
-    transports: ["websocket"],
-
-    allowEIO3: false,
+    transports: ["polling", "websocket"],
   });
-
 
   io.use((socket: AuthenticatedSocket, next) => {
     try {
       const cookie = socket.handshake.headers.cookie;
 
       if (!cookie) {
-        return next(new Error("No cookie"));
+        return next(new Error("Unauthorized"));
       }
 
-
-      const token = cookie
-        .split(";")
-        .find((c) => c.trim().startsWith("token="))
-        ?.split("=")[1];
-
+      const token = cookie.split("=")[1]?.trim();
 
       if (!token) {
-        return next(new Error("No token"));
+        return next(new Error("Unauthorized"));
       }
-
 
       const decoded = jwt.verify(
         token,
         Env.JWT_SECRET
-      ) as {
-        userId: string;
-      };
-
+      ) as { userId: string };
 
       socket.userId = decoded.userId;
 
       next();
-
     } catch (error) {
-      console.log("Socket auth error", error);
       next(new Error("Unauthorized"));
     }
   });
 
 
-
-  io.on("connection", (socket: AuthenticatedSocket)=>{
-
+  io.on("connection", (socket: AuthenticatedSocket) => {
     const userId = socket.userId;
 
-    if(!userId){
-      socket.disconnect();
+    if (!userId) {
+      socket.disconnect(true);
       return;
     }
 
+    const socketId = socket.id;
 
-    onlineUsers.set(
+    onlineUsers.set(userId, socketId);
+
+
+    console.log("Socket connected:", {
       userId,
-      socket.id
-    );
-
-
-    console.log(
-      "Socket connected",
-      userId,
-      socket.id
-    );
+      socketId,
+    });
 
 
     io?.emit(
@@ -99,188 +78,173 @@ export const initializeSocket = (httpServer: HTTPServer) => {
     socket.join(`user:${userId}`);
 
 
-
     socket.on(
       "chat:join",
-      async(
-        chatId:string,
-        callback?:Function
-      )=>{
-
-        try{
-
+      async (
+        chatId: string,
+        callback?: (error?: string) => void
+      ) => {
+        try {
           await validateChatParticipant(
             chatId,
             userId
           );
 
+          socket.join(`chat:${chatId}`);
 
-          socket.join(
-            `chat:${chatId}`
+          console.log(
+            `User ${userId} joined chat:${chatId}`
           );
-
 
           callback?.();
 
-        }catch(error){
-
-          callback?.(
-            "Unable to join chat"
-          );
-
+        } catch (error) {
+          callback?.("Error joining chat");
         }
-
       }
     );
-
 
 
     socket.on(
       "chat:leave",
-      (chatId:string)=>{
+      (chatId: string) => {
+        if (chatId) {
+          socket.leave(`chat:${chatId}`);
 
-        socket.leave(
-          `chat:${chatId}`
-        );
-
+          console.log(
+            `User ${userId} left chat:${chatId}`
+          );
+        }
       }
     );
 
 
+    socket.on("disconnect", () => {
 
-    socket.on(
-      "disconnect",
-      ()=>{
-
-        if(
-          onlineUsers.get(userId)
-          === socket.id
-        ){
-
-          onlineUsers.delete(userId);
-
-        }
-
+      if (
+        onlineUsers.get(userId) === socketId
+      ) {
+        onlineUsers.delete(userId);
 
         io?.emit(
           "online:users",
-          Array.from(
-            onlineUsers.keys()
-          )
+          Array.from(onlineUsers.keys())
         );
-
-
-        console.log(
-          "Socket disconnected",
-          userId
-        );
-
       }
-    );
+
+
+      console.log(
+        "Socket disconnected:",
+        {
+          userId,
+          socketId,
+        }
+      );
+    });
 
   });
-
 };
 
 
 
-const getIO = ()=>{
-
-  if(!io){
+const getIO = () => {
+  if (!io) {
     throw new Error(
-      "Socket not initialized"
+      "Socket.IO not initialized"
     );
   }
 
   return io;
-
 };
 
 
 
 export const emitNewChatToParticpants = (
-  participantIds:string[],
-  chat:any
-)=>{
+  participantIds: string[] = [],
+  chat: any
+) => {
 
-  const io=getIO();
+  const io = getIO();
 
-  participantIds.forEach(id=>{
+  participantIds.forEach(
+    (participantId) => {
 
-    io.to(
-      `user:${id}`
-    ).emit(
-      "chat:new",
-      chat
-    );
+      io
+        .to(`user:${participantId}`)
+        .emit(
+          "chat:new",
+          chat
+        );
 
-  });
-
+    }
+  );
 };
 
 
 
 export const emitNewMessageToChatRoom = (
- senderId:string,
- chatId:string,
- message:any
-)=>{
+  senderId: string,
+  chatId: string,
+  message: any
+) => {
 
- const io=getIO();
+  const io = getIO();
 
- const senderSocket =
- onlineUsers.get(senderId);
+  const senderSocketId =
+    onlineUsers.get(
+      senderId.toString()
+    );
 
 
- if(senderSocket){
+  if (senderSocketId) {
 
-  io.to(
-    `chat:${chatId}`
-  )
-  .except(senderSocket)
-  .emit(
-    "message:new",
-    message
-  );
+    io
+      .to(`chat:${chatId}`)
+      .except(senderSocketId)
+      .emit(
+        "message:new",
+        message
+      );
 
- }else{
+  } else {
 
-  io.to(
-    `chat:${chatId}`
-  )
-  .emit(
-    "message:new",
-    message
-  );
+    io
+      .to(`chat:${chatId}`)
+      .emit(
+        "message:new",
+        message
+      );
 
- }
-
+  }
 };
 
 
 
 export const emitLastMessageToParticipants = (
- participantIds:string[],
- chatId:string,
- lastMessage:any
-)=>{
+  participantIds: string[],
+  chatId: string,
+  lastMessage: any
+) => {
 
- const io=getIO();
+  const io = getIO();
 
 
- participantIds.forEach(id=>{
+  const payload = {
+    chatId,
+    lastMessage,
+  };
 
-  io.to(
-    `user:${id}`
-  )
-  .emit(
-    "chat:update",
-    {
-      chatId,
-      lastMessage
+
+  participantIds.forEach(
+    (participantId) => {
+
+      io
+        .to(`user:${participantId}`)
+        .emit(
+          "chat:update",
+          payload
+        );
+
     }
   );
-
- });
-
 };
