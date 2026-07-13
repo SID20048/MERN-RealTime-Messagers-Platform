@@ -12,11 +12,29 @@ let io: Server | null = null;
 
 const onlineUsers = new Map<string, string>();
 
+// 1. ADDED: Whitelist of allowed origins for development and production environments
+const allowedOrigins = [
+  "https://onrender.com",     // Prod Frontend
+  "https://onrender.com",  // Prod Backend
+  "http://localhost:5173",                                       // Local Frontend (Vite)
+  "http://localhost:3000",                                       // Local Backend/Alternate
+];
+
 export const initializeSocket = (httpServer: HTTPServer) => {
 
   io = new Server(httpServer, {
     cors: {
-      origin: Env.FRONTEND_ORIGIN,
+      // 2. FIXED: Replaced static single-string property with dynamic validator function
+      origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps, Postman, or local tests)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
       credentials: true,
       methods: ["GET", "POST"],
     },
@@ -54,11 +72,9 @@ export const initializeSocket = (httpServer: HTTPServer) => {
           return next(new Error("Unauthorized"));
         }
 
-        // 1. Extract the cookie value and decode URI symbols
         let rawToken = tokenCookie.split("=").slice(1).join("=");
         let token = decodeURIComponent(rawToken);
 
-        // 2. Clean up any Express wrapper characters (like 'j:' or wrapping double-quotes)
         if (token.startsWith("j:")) {
           token = token.replace(/^j:/, "");
         }
@@ -66,10 +82,8 @@ export const initializeSocket = (httpServer: HTTPServer) => {
           token = token.slice(1, -1);
         }
 
-        // 3. Verify the token and extract "id" matching your cookie generation file
         const decoded = jwt.verify(token, Env.JWT_SECRET) as { id: string };
 
-        // 4. Assign to socket context using the correct payload key
         socket.userId = decoded.id;
 
         next();
