@@ -40,13 +40,15 @@ export const useAuth = create<AuthState>()((set) => ({
   },
   login: async (data: LoginType) => {
     set({ isLoggingIn: true });
+    console.log("login axios called");
     try {
       const response = await API.post("/auth/login", data);
       set({ user: response.data.user });
       useSocket.getState().connectSocket();
       toast.success("Login successfully");
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Register failed");
+      console.log("login axios error", err);
+      toast.error(err.response?.data?.message || "Login failed");
     } finally {
       set({ isLoggingIn: false });
     }

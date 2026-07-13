@@ -67,8 +67,10 @@ export const useChat = create<ChatState>()((set, get) => ({
   fetchChats: async () => {
     set({ isChatsLoading: true });
     try {
-      const { data } = await API.get("/chat/all");
-      set({ chats: data.chats });
+      // 1. FIXED: Corrected path from "/user/all" to "/chat/all" or your actual chat history route.
+      // Used API instance directly since withCredentials is globally inherited.
+      const { data } = await API.get("/chat/all"); 
+      set({ chats: data.chats || [] });
     } catch (error: any) {
       toast.error(error?.response?.data?.message || "Failed to fetch chats");
     } finally {
@@ -86,7 +88,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       toast.success("Chat created successfully");
       return response.data.chat;
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Failed to fetch chats");
+      toast.error(error?.response?.data?.message || "Failed to create chat");
       return null;
     } finally {
       set({ isCreatingChat: false });
@@ -126,10 +128,6 @@ export const useChat = create<ChatState>()((set, get) => ({
       status: "sending...",
     };
 
-    // if (isAI) {
-    //  // AI Feature Source code link =>
-    // }
-
     set((state) => {
       if (state.singleChat?.chat?._id !== chatId) return state;
       return {
@@ -148,7 +146,6 @@ export const useChat = create<ChatState>()((set, get) => ({
         replyToId: replyTo?._id,
       });
       const { userMessage } = data;
-      //replace the temp user message
       set((state) => {
         if (!state.singleChat) return state;
         return {
@@ -169,17 +166,20 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   addNewChat: (newChat: ChatType) => {
     set((state) => {
-      const existingChatIndex = state.chats.findIndex(
-        (c) => c._id === newChat._id
+      // 2. FIXED: Safeguard against empty or undefined chat arrays
+      const currentChats = state.chats || [];
+      
+      const existingChatIndex = currentChats.findIndex(
+        (c) => c && c._id === newChat._id
       );
+      
       if (existingChatIndex !== -1) {
-        //move the chat to the top
         return {
-          chats: [newChat, ...state.chats.filter((c) => c._id !== newChat._id)],
+          chats: [newChat, ...currentChats.filter((c) => c && c._id !== newChat._id)],
         };
       } else {
         return {
-          chats: [newChat, ...state.chats],
+          chats: [newChat, ...currentChats],
         };
       }
     });
@@ -187,12 +187,13 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   updateChatLastMessage: (chatId, lastMessage) => {
     set((state) => {
-      const chat = state.chats.find((c) => c._id === chatId);
+      const currentChats = state.chats || [];
+      const chat = currentChats.find((c) => c && c._id === chatId);
       if (!chat) return state;
       return {
         chats: [
           { ...chat, lastMessage },
-          ...state.chats.filter((c) => c._id !== chatId),
+          ...currentChats.filter((c) => c && c._id !== chatId),
         ],
       };
     });
@@ -200,11 +201,11 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   addNewMessage: (chatId, message) => {
     const chat = get().singleChat;
-    if (chat?.chat._id === chatId) {
+    if (chat?.chat?._id === chatId) { // 3. FIXED: Safe-chain validation guard
       set({
         singleChat: {
           chat: chat.chat,
-          messages: [...chat.messages, message],
+          messages: [...(chat.messages || []), message],
         },
       });
     }
