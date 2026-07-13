@@ -44,7 +44,7 @@ export const initializeSocket = (httpServer: HTTPServer) => {
   });
 
 
-    io.use(
+  io.use(
     (
       socket: AuthenticatedSocket,
       next
@@ -55,22 +55,36 @@ export const initializeSocket = (httpServer: HTTPServer) => {
           socket.handshake.headers.cookie
         );
 
+        let token: string | null = null;
         const cookieHeader = socket.handshake.headers.cookie;
 
-        if (!cookieHeader) {
-          return next(new Error("Unauthorized"));
+        // Pipeline Route A: Attempt parsing token from cookie header
+        if (cookieHeader) {
+          const tokenCookie = cookieHeader
+            .split(";")
+            .find((c) => c.trim().startsWith("accessToken="));
+
+          if (tokenCookie) {
+            let rawToken = tokenCookie.split("=").slice(1).join("=");
+            token = decodeURIComponent(rawToken);
+          }
         }
 
-        const tokenCookie = cookieHeader
-          .split(";")
-          .find((c) => c.trim().startsWith("accessToken="));
-
-        if (!tokenCookie) {
-          return next(new Error("Unauthorized"));
+        // Pipeline Route B: DUAL-FALLBACK - Read from handshake auth block if browser blocks cookies
+        if (!token && socket.handshake.auth?.token) {
+          const authHeader = socket.handshake.auth.token;
+          if (authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7); // Strip off 'Bearer ' prefix wrapper
+          } else {
+            token = authHeader;
+          }
         }
 
-        let rawToken = tokenCookie.split("=").slice(1).join("=");
-        let token = decodeURIComponent(rawToken);
+        // Drop out immediately if both strategies return an empty query parameter
+        if (!token) {
+          console.log("SOCKET AUTH ERROR: No cookie or auth block token found.");
+          return next(new Error("Unauthorized"));
+        }
 
         if (token.startsWith("j:")) {
           token = token.replace(/^j:/, "");
