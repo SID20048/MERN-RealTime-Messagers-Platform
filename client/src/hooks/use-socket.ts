@@ -6,7 +6,7 @@ const BASE_URL = import.meta.env.VITE_API_URL;
 interface SocketState {
   socket: Socket | null;
   onlineUsers: string[];
-  connectSocket: (token?: string) => void; // 1. Added optional token parameter
+  connectSocket: (token?: string) => void;
   disconnectSocket: () => void;
 }
 
@@ -14,23 +14,38 @@ export const useSocket = create<SocketState>()((set, get) => ({
   socket: null,
   onlineUsers: [],
 
-  connectSocket: (token) => { // 2. Accept the token here
+  connectSocket: (token) => {
     const existing = get().socket;
 
+    // Prevent duplicate connection attempts if already active
     if (existing?.connected) {
       return;
     }
 
-    // 3. Fallback to localStorage if token isn't passed via argument
-    const authToken = token || localStorage.getItem("token");
+    // 1. DUAL FALLBACK EXTRACTION: Prioritizes explicit argument string,
+    // falls back to localStorage checks under standard naming keys
+    const authToken = 
+      token || 
+      localStorage.getItem("token") || 
+      localStorage.getItem("accessToken");
+
+    // 2. TOKEN CLEANUP: Formats token correctly before appending Bearer prefix
+    let cleanToken = authToken?.trim() || "";
+    if (cleanToken.startsWith("Bearer ")) {
+      cleanToken = cleanToken.substring(7);
+    }
+    
+    // Remove outer string quotes sometimes added by JSON stringify/storage mechanisms
+    if (cleanToken.startsWith('"') && cleanToken.endsWith('"')) {
+      cleanToken = cleanToken.slice(1, -1);
+    }
 
     const socket = io(BASE_URL, {
       withCredentials: true,
-      // 4. Pass token inside the auth object
+      // 3. SECURE AUTH BLOCK HANDOFF: Bypasses browser cross-site cookie blocking rules over web sockets
       auth: {
-        token: authToken ? `Bearer ${authToken}` : undefined
+        token: cleanToken ? `Bearer ${cleanToken}` : undefined
       },
-      // 5. Explicitly allow WebSocket upgrade if server supports it
       transports: ["polling", "websocket"],
       autoConnect: true,
       reconnection: true,
