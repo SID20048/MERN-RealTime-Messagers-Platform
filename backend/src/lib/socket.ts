@@ -12,27 +12,24 @@ let io: Server | null = null;
 
 const onlineUsers = new Map<string, string>();
 
-// 1. ADDED: Whitelist of allowed origins for development and production environments
+// 1. FIXED: Set the EXACT, FULL URLs of your deployed applications
 const allowedOrigins = [
-  "https://onrender.com",     // Prod Frontend
-  "https://onrender.com",  // Prod Backend
-  "http://localhost:5173",                                       // Local Frontend (Vite)
-  "http://localhost:3000",                                       // Local Backend/Alternate
+  "https://mern-realtime-messagers-platform-1.onrender.com",    // Your exact frontend URL
+  "https://mern-realtime-messagers-platform-fo30.onrender.com", // Your exact backend URL
+  "http://localhost:5173",                                      // Local Frontend (Vite)
+  "http://localhost:3000",                                      // Local Backend/Alternate
 ];
 
 export const initializeSocket = (httpServer: HTTPServer) => {
 
   io = new Server(httpServer, {
     cors: {
-      // 2. FIXED: Replaced static single-string property with dynamic validator function
+      // 2. FIXED: Fallback to false instead of throwing a hard engine Error instance
       origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, Postman, or local tests)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
           callback(null, true);
         } else {
-          callback(new Error("Not allowed by CORS"));
+          callback(null, false); // Triggers clean fallback instead of crashing the process
         }
       },
       credentials: true,
