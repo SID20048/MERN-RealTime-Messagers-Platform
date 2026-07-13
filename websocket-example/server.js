@@ -9,6 +9,7 @@ const app = express();
 const allowedOrigins = [
   'https://mern-realtime-messagers-platform-1.onrender.com',
   'http://localhost:5173',
+  'https://mern-realtime-messagers-platform-fo30.onrender.com',
   'http://localhost:3000'
 ];
 
