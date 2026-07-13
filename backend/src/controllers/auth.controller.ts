@@ -12,6 +12,12 @@ export const registerController = asyncHandler(
     const user = await registerService(body);
     const userId = user._id as string;
 
+    if (!userId) {
+      return res.status(HTTPSTATUS.BAD_REQUEST).json({
+        message: "User registration failed",
+      });
+    }
+
     return setJwtAuthCookie({
       res,
       userId,
@@ -22,6 +28,7 @@ export const registerController = asyncHandler(
         user,
       });
   }
+  
 );
 
 export const loginController = asyncHandler(
@@ -30,6 +37,13 @@ export const loginController = asyncHandler(
 
     const user = await loginService(body);
     const userId = user._id as string;
+
+    if (!userId) {
+      return res.status(HTTPSTATUS.BAD_REQUEST).json({
+        message: "User login failed",
+      });
+    }
+
     return setJwtAuthCookie({
       res,
       userId,
@@ -44,6 +58,7 @@ export const loginController = asyncHandler(
 
 export const logoutController = asyncHandler(
   async (req: Request, res: Response) => {
+    console.log("logoutController called");
     return clearJwtAuthCookie(res).status(HTTPSTATUS.OK).json({
       message: "User logout successfully",
     });
@@ -51,7 +66,9 @@ export const logoutController = asyncHandler(
 );
 
 export const authStatusController = asyncHandler(
+
   async (req: Request, res: Response) => {
+    console.log("authStatusController called");
     const user = req.user;
     return res.status(HTTPSTATUS.OK).json({
       message: "Authenticated User",

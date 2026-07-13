@@ -29,85 +29,54 @@ export const initializeSocket = (httpServer: HTTPServer) => {
   });
 
 
-  io.use(
+    io.use(
     (
       socket: AuthenticatedSocket,
       next
     ) => {
-
       try {
-
         console.log(
           "SOCKET COOKIE:",
           socket.handshake.headers.cookie
         );
 
-
-        const cookieHeader =
-          socket.handshake.headers.cookie;
-
+        const cookieHeader = socket.handshake.headers.cookie;
 
         if (!cookieHeader) {
-          return next(
-            new Error("Unauthorized")
-          );
+          return next(new Error("Unauthorized"));
         }
 
-
-        const tokenCookie =
-          cookieHeader
-            .split(";")
-            .find(
-              (c) =>
-                c.trim()
-                .startsWith("accessToken=")
-            );
-
+        const tokenCookie = cookieHeader
+          .split(";")
+          .find((c) => c.trim().startsWith("accessToken="));
 
         if (!tokenCookie) {
-          return next(
-            new Error("Unauthorized")
-          );
+          return next(new Error("Unauthorized"));
         }
 
+        // 1. Extract the cookie value and decode URI symbols
+        let rawToken = tokenCookie.split("=").slice(1).join("=");
+        let token = decodeURIComponent(rawToken);
 
-        const token =
-          tokenCookie
-          .split("=")
-          .slice(1)
-          .join("=");
+        // 2. Clean up any Express wrapper characters (like 'j:' or wrapping double-quotes)
+        if (token.startsWith("j:")) {
+          token = token.replace(/^j:/, "");
+        }
+        if (token.startsWith('"') && token.endsWith('"')) {
+          token = token.slice(1, -1);
+        }
 
+        // 3. Verify the token and extract "id" matching your cookie generation file
+        const decoded = jwt.verify(token, Env.JWT_SECRET) as { id: string };
 
-        const decoded =
-          jwt.verify(
-            token,
-            Env.JWT_SECRET
-          ) as {
-            userId:string;
-          };
-
-
-        socket.userId =
-          decoded.userId;
-
+        // 4. Assign to socket context using the correct payload key
+        socket.userId = decoded.id;
 
         next();
-
-
-      } catch(error){
-
-        console.log(
-          "SOCKET AUTH ERROR",
-          error
-        );
-
-
-        next(
-          new Error("Unauthorized")
-        );
-
+      } catch (error) {
+        console.log("SOCKET AUTH ERROR", error);
+        next(new Error("Unauthorized"));
       }
-
     }
   );
 
