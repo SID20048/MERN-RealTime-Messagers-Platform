@@ -38,8 +38,11 @@ export const useAuth = create<AuthState>()((set) => ({
 
       set({ user: response.data.user });
       
-      // 2. Forward token directly to the socket connector
-      useSocket.getState().connectSocket(token);
+      // 2. FIXED: Wrapped in setTimeout to resolve microtask state race conditions
+      setTimeout(() => {
+        useSocket.getState().connectSocket(token);
+      }, 50);
+
       toast.success("Register successfully");
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Register failed");
@@ -61,8 +64,11 @@ export const useAuth = create<AuthState>()((set) => ({
 
       set({ user: response.data.user });
 
-      // 4. Forward token directly to the socket connector
-      useSocket.getState().connectSocket(token);
+      // 4. FIXED: Wrapped in setTimeout to let localStorage settle securely
+      setTimeout(() => {
+        useSocket.getState().connectSocket(token);
+      }, 50);
+
       toast.success("Login successfully");
     } catch (err: any) {
       console.log("login axios error", err);
@@ -97,7 +103,12 @@ export const useAuth = create<AuthState>()((set) => ({
       }
 
       set({ user: response.data.user });
-      useSocket.getState().connectSocket(token);
+
+      // 7. FIXED: Wrapped in setTimeout to sync active state restoration hooks
+      setTimeout(() => {
+        useSocket.getState().connectSocket(token);
+      }, 50);
+
     } catch (err: any) {
       // Clear token locally if validation fails on the backend status check
       localStorage.removeItem("token");
